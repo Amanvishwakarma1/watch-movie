@@ -10,13 +10,21 @@ const required = [
   'ADMIN_PASSWORD'
 ];
 
-for (const key of required) {
-  if (!process.env[key]) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
+const isPlaceholder = (value) => /replace_with|^your_|USER:PASSWORD@/.test(value);
+
+const missing = required.filter(key => !process.env[key]);
+if (missing.length) {
+  throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+}
+const unfilled = required.filter(key => isPlaceholder(process.env[key]));
+if (unfilled.length) {
+  throw new Error(`Replace the placeholder values in backend/.env (or Render env vars): ${unfilled.join(', ')}`);
 }
 if (process.env.JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET must be at least 32 characters long.');
+}
+if (process.env.ADMIN_PASSWORD.length < 10) {
+  throw new Error('ADMIN_PASSWORD must be at least 10 characters long.');
 }
 
 export const config = {

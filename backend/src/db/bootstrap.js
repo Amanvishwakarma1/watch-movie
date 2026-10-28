@@ -9,7 +9,20 @@ const schemaPath = new URL('../../sql/schema.sql', import.meta.url);
 // so the schema and the admin account are kept in sync from here.
 export async function applySchema() {
   const sql = await fs.readFile(schemaPath, 'utf8');
-  await pool.query(sql);
+  try {
+    await pool.query(sql);
+  } catch (error) {
+    // 42501 = insufficient privilege or "must be owner". Typical with Neon's Data API
+    // "authenticator" role instead of the database owner.
+    if (error.code === '42501') {
+      const { rows } = await pool.query('SELECT current_user');
+      throw Object.assign(new Error(
+        `Database role '${rows[0].current_user}' cannot create the app's tables. ` +
+        'Use the connection string for the owner role (in Neon: Connect > Role "neondb_owner", pooled).'
+      ), { permanent: true });
+    }
+    throw error;
+  }
 }
 
 export async function ensureAdmin() {
@@ -30,8 +43,18 @@ export async function ensureAdmin() {
   return current ? 'updated' : 'created';
 }
 
-export async function bootstrapDatabase() {
-  await applySchema();
-  const status = await ensureAdmin();
-  if (status !== 'unchanged') console.log(`Admin account '${config.adminUsername}' ${status}.`);
+export async function bootstrapDatabase({ attempts = 3 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await applySchema();
+      const status = await ensureAdmin();
+      if (status !== 'unchanged') console.log(`Admin account '${config.adminUsername}' ${status}.`);
+      return;
+    } catch (error) {
+      // Retry briefly: a Neon compute waking from suspend can drop the first connection.
+      if (attempt >= attempts || error.permanent) throw error;
+      console.warn(`Database not ready (${error.message}); retrying (${attempt}/${attempts - 1})…`);
+      await new Promise(resolve => setTimeout(resolve, 3000 * attempt));
+    }
+  }
 }
