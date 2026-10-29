@@ -61,7 +61,7 @@ export default function usePlayerGestures(shellRef) {
 
     function toggleFullscreen() {
       if (document.fullscreenElement) document.exitFullscreen?.();
-      else shell.requestFullscreen?.().catch(() => {});
+      else document.documentElement.requestFullscreen?.().catch(() => {});
     }
 
     // Capture phase: runs before the player's own click handling, so a

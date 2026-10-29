@@ -1,36 +1,75 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
+import { readResume } from '../resume.js';
 import Navbar from '../components/Navbar.jsx';
+import Billboard from '../components/Billboard.jsx';
+import MovieRow from '../components/MovieRow.jsx';
 import MovieCard from '../components/MovieCard.jsx';
+import { BillboardSkeleton, GridSkeleton, RowSkeleton } from '../components/Skeletons.jsx';
 import useSlowHint from '../useSlowHint.js';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 50; // the API's maximum
+
+// Kept between visits so coming back from the player shows the rows instantly
+// while a fresh copy loads in the background.
+let catalogCache = null;
+
+const wakeHint = 'Waking up the server — this can take up to a minute after a quiet period.';
+
+// "Action, Thriller" → ['Action', 'Thriller']
+const splitGenres = (genre) => (genre || '').split(/[,/|]/).map(g => g.trim()).filter(Boolean);
+
+function buildRows(movies) {
+  const rows = [];
+  const started = movies.filter(movie => readResume(movie.id));
+  if (started.length) rows.push({ title: 'Continue watching', movies: started });
+  rows.push({ title: 'New on NightScreen', movies });
+
+  const byGenre = new Map();
+  for (const movie of movies) {
+    for (const genre of splitGenres(movie.genre)) {
+      const key = genre.toLowerCase();
+      if (!byGenre.has(key)) byGenre.set(key, { title: genre, movies: [] });
+      byGenre.get(key).movies.push(movie);
+    }
+  }
+  // A genre row that holds every movie would just repeat "New on NightScreen".
+  const genreRows = [...byGenre.values()].filter(row => row.movies.length < movies.length);
+  genreRows.sort((a, b) => b.movies.length - a.movies.length);
+  return rows.concat(genreRows);
+}
 
 export default function Home() {
   const [search, setSearch] = useState('');
-  const [movies, setMovies] = useState([]);
+  const [movies, setMovies] = useState(() => catalogCache?.movies || []);
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(() => catalogCache?.total || 0);
+  const [loading, setLoading] = useState(!catalogCache);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const slow = useSlowHint(loading);
+  const searching = search.trim() !== '';
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    if (!searching && catalogCache) {
+      setMovies(catalogCache.movies); setTotal(catalogCache.total); setPage(1);
+    } else {
+      setLoading(true);
+    }
     const timer = setTimeout(() => {
       api.listMovies({ search, limit: PAGE_SIZE })
         .then(data => {
           if (!active) return;
+          if (!searching) catalogCache = { movies: data.movies, total: data.pagination.total };
           setMovies(data.movies); setTotal(data.pagination.total); setPage(1); setError('');
         })
         .catch(err => { if (active) setError(err.message); })
         .finally(() => { if (active) setLoading(false); });
-    }, 200);
+    }, searching ? 250 : 0);
     return () => { active = false; clearTimeout(timer); };
-  }, [search]);
+  }, [search, searching]);
 
   async function loadMore() {
     setLoadingMore(true);
@@ -46,51 +85,57 @@ export default function Home() {
     }
   }
 
+  const rows = useMemo(() => buildRows(movies), [movies]);
+
+  const moreButton = movies.length < total && (
+    <div className="load-more">
+      <button className="button button-quiet" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more movies'}</button>
+    </div>
+  );
+
+  let content;
+  if (searching) {
+    content = (
+      <section className="search-results">
+        <h2 className="results-title">
+          {loading ? 'Searching…' : `${total} ${total === 1 ? 'result' : 'results'} for “${search.trim()}”`}
+        </h2>
+        {loading ? <GridSkeleton /> :
+          error && !movies.length ? <div className="state-message error-state">{error}<p>Please try again in a moment.</p></div> :
+          movies.length ? <><div className="card-grid">{movies.map(movie => <MovieCard key={movie.id} movie={movie} />)}</div>{moreButton}</> :
+          <div className="empty-state"><h3>No matches just yet.</h3><p>Try another title or genre.</p></div>}
+      </section>
+    );
+  } else if (loading) {
+    content = (
+      <>
+        <BillboardSkeleton>
+          <p className="loading-status" role="status">
+            <span className="visually-hidden">Loading the collection…</span>
+            {slow && wakeHint}
+          </p>
+        </BillboardSkeleton>
+        <div className="rows"><RowSkeleton /><RowSkeleton /></div>
+      </>
+    );
+  } else if (error && !movies.length) {
+    content = <div className="state-message error-state home-message">{error}<p>Please refresh the page in a moment.</p></div>;
+  } else if (movies.length) {
+    content = (
+      <>
+        <Billboard movie={movies[0]} />
+        <div className="rows">{rows.map(row => <MovieRow key={row.title} title={row.title} movies={row.movies} />)}</div>
+        {moreButton}
+      </>
+    );
+  } else {
+    content = <div className="empty-state home-message"><span>✳</span><h3>The screen is waiting.</h3><p>New stories will appear here when the admin adds a movie.</p></div>;
+  }
+
   return (
     <div className="app-shell">
-      <Navbar />
-      <main>
-        <section className="hero">
-          <div className="hero-glow" />
-          <p className="eyebrow"><span /> YOUR NEXT MOVIE NIGHT</p>
-          <h1>Stories worth<br /><span>staying up for.</span></h1>
-          <p className="hero-copy">Find your next favorite film. Pick a title, press play, and settle in.</p>
-          <a className="button button-primary" href="#movies">Explore movies <span>↘</span></a>
-          <div className="hero-art" aria-hidden="true">
-            <div className="art-card art-card-one"><span>THE</span><b>UNKNOWN</b><small>A STORY BEGINS</small></div>
-            <div className="art-card art-card-two"><span>AFTER</span><b>HOURS</b><small>WHEN THE CITY SLEEPS</small></div>
-            <div className="art-card art-card-three"><span>THE LAST</span><b>ORBIT</b><small>BEYOND THE STARS</small></div>
-          </div>
-          <div className="hero-bottom-label">INDEPENDENT STORIES. ENDLESS WORLDS.</div>
-        </section>
-
-        <section className="catalog section-wrap" id="movies">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">THE COLLECTION</p>
-              <h2>Find your <span>next watch.</span></h2>
-            </div>
-            <label className="search-box">
-              <span>⌕</span>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search movies..." aria-label="Search movies" />
-              {search && <button onClick={() => setSearch('')} aria-label="Clear search">×</button>}
-            </label>
-          </div>
-
-          {loading ? <div className="state-message">Loading the collection…{slow && <p className="wake-hint">Waking up the server — this can take up to a minute after a quiet period.</p>}</div> :
-            error && !movies.length ? <div className="state-message error-state">{error}<p>Please refresh the page in a moment.</p></div> :
-            movies.length ? <>
-              <div className="movie-grid">{movies.map(movie => <MovieCard key={movie.id} movie={movie} />)}</div>
-              {movies.length < total && (
-                <div className="load-more">
-                  <button className="button button-quiet" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more movies'}</button>
-                </div>
-              )}
-            </> :
-            <div className="empty-state"><span>✳</span><h3>{search ? 'No matches just yet.' : 'The screen is waiting.'}</h3><p>{search ? 'Try another title or genre.' : 'New stories will appear here when the admin adds a movie.'}</p></div>
-          }
-        </section>
-      </main>
+      <Navbar overlay search={search} onSearch={setSearch} />
+      <main className="home">{content}</main>
       <footer className="footer"><Link className="brand" to="/"><span className="brand-mark">N</span><span>Night<span className="brand-light">Screen</span></span></Link><span>Made for movie nights.</span></footer>
     </div>
   );

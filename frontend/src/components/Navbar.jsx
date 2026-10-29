@@ -1,15 +1,32 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CloseIcon, SearchIcon } from './Icons.jsx';
 
-export default function Navbar({ admin = false, onLogout }) {
+// `overlay` floats the bar over the home billboard and turns it solid on scroll.
+// Passing `onSearch` adds the search field.
+export default function Navbar({ admin = false, onLogout, overlay = false, search = '', onSearch }) {
   const navigate = useNavigate();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    if (!overlay) return undefined;
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [overlay]);
+
+  const classes = ['topbar', overlay && 'overlay', overlay && (scrolled || search) && 'solid'].filter(Boolean).join(' ');
+
   return (
-    <header className="topbar">
+    <header className={classes}>
       <Link className="brand" to="/">
         <span className="brand-mark">N</span>
         <span>Night<span className="brand-light">Screen</span></span>
       </Link>
       <nav>
-        <Link to="/">Discover</Link>
+        {onSearch && <SearchField value={search} onChange={onSearch} />}
+        <Link className="nav-home" to="/">Home</Link>
         {admin ? (
           <>
             <Link to="/admin">Dashboard</Link>
@@ -23,5 +40,37 @@ export default function Navbar({ admin = false, onLogout }) {
         )}
       </nav>
     </header>
+  );
+}
+
+function SearchField({ value, onChange }) {
+  const inputRef = useRef(null);
+  const [focused, setFocused] = useState(false);
+  const open = focused || Boolean(value);
+
+  return (
+    <div className={`nav-search${open ? ' open' : ''}`}>
+      <button type="button" className="nav-search-icon" aria-label="Search" tabIndex={open ? -1 : 0}
+        onClick={() => inputRef.current?.focus()}>
+        <SearchIcon />
+      </button>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={e => { if (e.key === 'Escape') { onChange(''); e.currentTarget.blur(); } }}
+        placeholder="Titles, genres"
+        aria-label="Search movies"
+      />
+      {value && (
+        <button type="button" className="nav-search-clear" aria-label="Clear search"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => { onChange(''); inputRef.current?.focus(); }}>
+          <CloseIcon />
+        </button>
+      )}
+    </div>
   );
 }
