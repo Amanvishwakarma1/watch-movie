@@ -24,7 +24,8 @@ async function find(call) {
   try {
     return await call();
   } catch (error) {
-    if (error?.status === 404) return null;
+    // Mux answers 400 (not 404) for an id that is malformed.
+    if (error?.status === 404 || error?.status === 400) return null;
     throw new Error(error?.error?.error?.messages?.[0] || error.message || 'Mux lookup failed.');
   }
 }

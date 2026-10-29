@@ -9,3 +9,7 @@
 .hero-art{pointer-events:none}.hero .button-primary{position:relative;z-index:3}
 @media(max-width:720px){.hero{min-height:650px}.hero-art{top:345px}}
 @media(max-width:440px){.hero{min-height:620px}.hero-art{top:335px}}
+.upload-progress-hint{font-size:11px;color:var(--muted);line-height:1.5;margin:9px 0 0}
+.upload-progress-track>.indeterminate{width:35%;animation:progress-slide 1.3s ease-in-out infinite}
+@keyframes progress-slide{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}
+@media(prefers-reduced-motion:reduce){.upload-progress-track>.indeterminate{animation:none;width:100%;opacity:.6}}

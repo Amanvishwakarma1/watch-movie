@@ -14,7 +14,19 @@ export default function AdminDashboard({ onLogout }) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [elapsed, setElapsed] = useState(0);
   const busy = Boolean(status);
+  const processing = status === 'Processing video…';
+
+  // Mux converts the video after the upload; there is no byte progress for that
+  // step, so show a running clock instead of a bar that looks stuck at 0%.
+  useEffect(() => {
+    if (!processing) return undefined;
+    const startedAt = Date.now();
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [processing]);
 
   async function loadMovies() {
     const data = await api.listMovies({ limit: 50 });
@@ -113,8 +125,20 @@ export default function AdminDashboard({ onLogout }) {
             {notice && <p className="form-success">{notice}</p>}
             {busy && (
               <div className="upload-progress" role="status">
-                <div className="upload-progress-label"><span>{status}</span>{progress > 0 && <span>{Math.round(progress * 100)}%</span>}</div>
-                <div className="upload-progress-track"><div style={{ width: `${Math.round(progress * 100)}%` }} /></div>
+                <div className="upload-progress-label">
+                  <span>{status}</span>
+                  {processing
+                    ? <span>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
+                    : progress > 0 && <span>{Math.round(progress * 100)}%</span>}
+                </div>
+                <div className="upload-progress-track">
+                  {processing
+                    ? <div className="indeterminate" />
+                    : <div style={{ width: `${Math.round(progress * 100)}%` }} />}
+                </div>
+                {processing && (
+                  <p className="upload-progress-hint">Upload finished. Mux is now converting the video for streaming. A full-length movie can take several minutes, so keep this tab open. It will publish automatically.</p>
+                )}
               </div>
             )}
             <button className="button button-primary full-width" disabled={busy}>{busy ? status : 'Upload & publish movie'}</button>
