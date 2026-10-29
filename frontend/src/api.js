@@ -28,29 +28,25 @@ async function request(path, options = {}) {
   return data;
 }
 
-// Sends a file straight to Cloudinary using params signed by our API.
+// Sends the video straight to Mux's direct-upload URL.
 // XHR rather than fetch so large videos can report upload progress.
-function uploadToCloudinary({ uploadUrl, params }, file, onProgress) {
+function uploadToMux(uploadUrl, file, onProgress) {
   return new Promise((resolve, reject) => {
-    const body = new FormData();
-    Object.entries(params).forEach(([key, value]) => body.append(key, value));
-    body.append('file', file);
-
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', uploadUrl);
+    xhr.open('PUT', uploadUrl);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress?.(event.loaded / event.total);
     };
     xhr.onload = () => {
-      let data = {};
-      try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error page */ }
-      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(data.error?.message || `Upload failed (${xhr.status}).`));
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed (${xhr.status}).`));
     };
     xhr.onerror = () => reject(new Error('Upload failed. Check your connection and try again.'));
-    xhr.send(body);
+    xhr.send(file);
   });
 }
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const api = {
   listMovies: ({ page = 1, limit = 20, search = '' } = {}) =>
@@ -63,17 +59,30 @@ export const api = {
   },
   me: () => request('/api/auth/me'),
   logout: () => session.clear(),
-  // Returns the Cloudinary public_id of the uploaded file.
-  uploadMedia: async (kind, file, onProgress) => {
-    const signed = await request('/api/admin/uploads/signature', { method: 'POST', body: JSON.stringify({ kind }) });
-    if (file.size > signed.maxBytes) {
-      throw new Error(`${kind === 'video' ? 'Video' : 'Poster'} is larger than ${Math.floor(signed.maxBytes / 1024 / 1024)} MB.`);
+  // Uploads a video to Mux and waits until it is playable. Returns the upload id.
+  // onStatus receives 'uploading' then 'processing'; onUploadId fires as soon as the id exists
+  // so the caller can clean up if a later step fails.
+  uploadVideo: async (file, { onProgress, onStatus, onUploadId } = {}) => {
+    const upload = await request('/api/admin/uploads', { method: 'POST' });
+    onUploadId?.(upload.uploadId);
+    if (file.size > upload.maxBytes) {
+      throw new Error(`Video is larger than ${Math.floor(upload.maxBytes / 1024 / 1024 / 1024)} GB.`);
     }
-    await uploadToCloudinary(signed, file, onProgress);
-    return signed.params.public_id;
+    onStatus?.('uploading');
+    await uploadToMux(upload.uploadUrl, file, onProgress);
+
+    onStatus?.('processing');
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (Date.now() < deadline) {
+      const state = await request(`/api/admin/uploads/${encodeURIComponent(upload.uploadId)}`);
+      if (state.status === 'ready') return upload.uploadId;
+      if (state.status === 'errored') throw new Error(state.error || 'Mux could not process this video.');
+      await wait(3000);
+    }
+    throw new Error('Mux is taking too long to process the video. Check the Mux dashboard and try again.');
   },
-  discardMedia: (kind, publicId) =>
-    request('/api/admin/uploads', { method: 'DELETE', body: JSON.stringify({ kind, public_id: publicId }) }),
+  discardUpload: (uploadId) =>
+    request(`/api/admin/uploads/${encodeURIComponent(uploadId)}`, { method: 'DELETE' }),
   createMovie: (fields) =>
     request('/api/admin/movies', { method: 'POST', body: JSON.stringify(fields) }),
   updateMovie: (id, fields) =>

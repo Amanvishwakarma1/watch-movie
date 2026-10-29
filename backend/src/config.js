@@ -2,9 +2,8 @@ import 'dotenv/config';
 
 const required = [
   'DATABASE_URL',
-  'CLOUDINARY_CLOUD_NAME',
-  'CLOUDINARY_API_KEY',
-  'CLOUDINARY_API_SECRET',
+  'MUX_TOKEN_ID',
+  'MUX_TOKEN_SECRET',
   'JWT_SECRET',
   'ADMIN_USERNAME',
   'ADMIN_PASSWORD'
@@ -36,15 +35,13 @@ export const config = {
     .map(url => url.trim().replace(/\/$/, ''))
     .filter(Boolean),
   databaseUrl: process.env.DATABASE_URL,
-  cloudinary: {
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-    apiKey: process.env.CLOUDINARY_API_KEY,
-    apiSecret: process.env.CLOUDINARY_API_SECRET
+  mux: {
+    tokenId: process.env.MUX_TOKEN_ID,
+    tokenSecret: process.env.MUX_TOKEN_SECRET
   },
   jwtSecret: process.env.JWT_SECRET,
   adminUsername: process.env.ADMIN_USERNAME,
   adminPassword: process.env.ADMIN_PASSWORD,
-  // Cloudinary free plan caps: 100 MB per video, 10 MB per image.
-  maxVideoBytes: Number(process.env.MAX_VIDEO_BYTES || 100 * 1024 * 1024),
-  maxPosterBytes: Number(process.env.MAX_POSTER_BYTES || 10 * 1024 * 1024)
+  // Mux has no per-file cap of its own; this is just a sanity limit in the dashboard.
+  maxVideoBytes: Number(process.env.MAX_VIDEO_BYTES || 5 * 1024 * 1024 * 1024)
 };

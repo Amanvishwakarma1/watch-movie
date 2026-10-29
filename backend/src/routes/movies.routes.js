@@ -5,7 +5,7 @@ import { pool } from '../db/pool.js';
 const router = Router();
 
 const publicColumns = `id, title, description, genre, release_year,
-  poster_url, video_url, video_format, created_at, updated_at`;
+  mux_playback_id, created_at, updated_at`;
 
 router.get('/', async (req, res, next) => {
   try {
@@ -22,13 +22,13 @@ router.get('/', async (req, res, next) => {
     const [items, count] = await Promise.all([
       pool.query(
         `SELECT ${publicColumns} FROM movies
-         WHERE title ILIKE $1 ESCAPE '\\' OR genre ILIKE $1 ESCAPE '\\'
+         WHERE mux_playback_id IS NOT NULL AND (title ILIKE $1 ESCAPE '\\' OR genre ILIKE $1 ESCAPE '\\')
          ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
         [pattern, limit, offset]
       ),
       pool.query(
         `SELECT COUNT(*)::int AS total FROM movies
-         WHERE title ILIKE $1 ESCAPE '\\' OR genre ILIKE $1 ESCAPE '\\'`,
+         WHERE mux_playback_id IS NOT NULL AND (title ILIKE $1 ESCAPE '\\' OR genre ILIKE $1 ESCAPE '\\')`,
         [pattern]
       )
     ]);
@@ -46,7 +46,7 @@ router.get('/:id', async (req, res, next) => {
     const id = z.string().uuid().safeParse(req.params.id);
     if (!id.success) return res.status(404).json({ error: 'Movie not found.' });
     const result = await pool.query(
-      `SELECT ${publicColumns} FROM movies WHERE id = $1`,
+      `SELECT ${publicColumns} FROM movies WHERE id = $1 AND mux_playback_id IS NOT NULL`,
       [id.data]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Movie not found.' });

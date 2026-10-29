@@ -16,11 +16,9 @@ services:
         sync: false
       - key: FRONTEND_URL # e.g. https://nightscreen-web.onrender.com
         sync: false
-      - key: CLOUDINARY_CLOUD_NAME
+      - key: MUX_TOKEN_ID
         sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
+      - key: MUX_TOKEN_SECRET
         sync: false
       - key: JWT_SECRET
         generateValue: true

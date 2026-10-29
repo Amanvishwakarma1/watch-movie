@@ -1,24 +1,24 @@
 # NightScreen — Movie Streaming MVP
 
-React + Vite frontend, Express API, Neon PostgreSQL, Cloudinary media storage. Built to run entirely on free tiers.
+React + Vite frontend, Express API, Neon PostgreSQL, Mux video hosting. Built to run entirely on free tiers.
 
 ## How the pieces connect
 
 ```
-Browser ──(movie list / details)──► API (Render) ──► Neon (movie records: titles, Cloudinary URLs)
+Browser ──(movie list / details)──► API (Render) ──► Neon (movie records: titles, Mux IDs)
    │
-   ├──(plays video, loads posters)──► Cloudinary CDN   (media never passes through the API)
+   ├──(plays video, loads poster)───► Mux (HLS streaming + thumbnails; media never passes through the API)
    │
-   └──(admin upload, signed by API)─► Cloudinary Upload API
+   └──(admin upload, URL from API)──► Mux direct upload
 ```
 
-- **Neon** stores only metadata: title, description, genre, year, and the Cloudinary URLs / public IDs.
-- **Cloudinary** stores and delivers the poster images and video files.
-- **The API** connects the two: it serves the catalog from Neon, signs admin uploads, verifies uploaded files exist on Cloudinary before saving a movie, and deletes Cloudinary files when a movie is deleted. Video bytes never go through it, which keeps it within Render's free 512 MB instance.
+- **Neon** stores only metadata: title, description, genre, year, and the Mux asset / playback IDs.
+- **Mux** stores, transcodes and streams the video (adaptive HLS). The poster is a frame from the video, served by Mux as a thumbnail, so there is no separate poster upload.
+- **The API** connects the two: it serves the catalog from Neon, creates Mux direct-upload URLs for the admin, checks the video is ready on Mux before saving a movie, and deletes the Mux asset when a movie is deleted. Video bytes never go through it, which keeps it within Render's free 512 MB instance.
 
 ## Requirements
 - Node.js 20+
-- Neon, Cloudinary and Render accounts (all free tier)
+- Neon, Mux and Render accounts (all free tier)
 
 ## 1. Neon (free tier database)
 1. Sign up at neon.tech and create a project (Free plan). Pick the region closest to your Render region (e.g. AWS `us-east-1` / Render Virginia, or AWS `ap-southeast-1` / Render Singapore) to keep queries fast.
@@ -28,15 +28,15 @@ Browser ──(movie list / details)──► API (Render) ──► Neon (movie
 
 No SQL editor step: on every start the API creates the tables (`backend/sql/schema.sql`, idempotent) and creates or updates the admin account. If Neon's compute is suspended, startup waits for it to wake and retries.
 
-## 2. Cloudinary (free tier storage)
-From the Cloudinary console, open **Settings → API Keys** and copy the cloud name, API key and API secret. No upload preset is needed because uploads are signed by the API.
+## 2. Mux (video hosting)
+In the Mux dashboard open **Settings → API Access Tokens**, create a token with **Mux Video** read + write access, and copy the **Token ID** and **Secret Key** (the secret is shown only once). They go in `MUX_TOKEN_ID` and `MUX_TOKEN_SECRET`. No webhook is needed: the dashboard polls the API until Mux finishes processing.
 
 ## 3. Configure `.env`
 Both apps read a `.env` file that is git-ignored (it holds secrets and must never be committed):
 
 | File | Fill in |
 |---|---|
-| `backend/.env` | `DATABASE_URL` (Neon), `CLOUDINARY_CLOUD_NAME` / `_API_KEY` / `_API_SECRET`, `ADMIN_PASSWORD` (10+ chars). `JWT_SECRET` is already generated. |
+| `backend/.env` | `DATABASE_URL` (Neon), `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET`, `ADMIN_PASSWORD` (10+ chars). `JWT_SECRET` is already generated. |
 | `frontend/.env` | `VITE_API_BASE_URL`, already `http://localhost:5000` for local use. |
 
 The API refuses to start while any placeholder value is left, and says which ones need filling in.
@@ -75,21 +75,19 @@ Render asks for the secret values: copy them from `backend/.env` (`DATABASE_URL`
 | Service | Limit | Effect here |
 |---|---|---|
 | Render free web service | Sleeps after ~15 min idle; waking takes up to ~1 min | The first visitor after a quiet period sees "Waking up the server…" while the catalog loads. The static frontend itself never sleeps. |
-| Cloudinary free | 100 MB max per video, 10 MB per image; ~25 monthly credits shared by storage + bandwidth + transformations | Full movies are usually larger than 100 MB, so compress (H.264 MP4, 720p) or use short films/trailers. **Bandwidth is the real ceiling**: every view streams the whole file from Cloudinary. |
+| Mux | Plan limits on stored assets, video length and delivery minutes (see your Mux billing page; the free plan is for trying things out) | Mux has no per-file size cap like Cloudinary's 100 MB, so full-length movies upload fine. Streaming and storage are billed by minutes, so watch usage in the Mux dashboard. |
 | Neon free | 0.5 GB storage per project; monthly compute-hour allowance; compute suspends after ~5 min idle | The first query after a pause takes a second or two. Metadata is tiny, so storage isn't a concern. The health check (`/api/health`) doesn't touch the database, and idle connections close after 30 s, so the database can suspend and save compute hours. |
-
-Posters are delivered resized (`f_auto,q_auto,w_500`) to save Cloudinary bandwidth.
 
 ## Admin auth
 Admin sign-in returns a JWT (8 h) that the dashboard keeps in `sessionStorage` and sends as `Authorization: Bearer …`. Cookies are not used because the frontend and API are on different `onrender.com` sites, and browsers block cross-site cookies. Rotating `JWT_SECRET` signs everyone out.
 
 ## Supported media
-- Video: **MP4 (H.264)** or **WebM**. MOV is rejected because most browsers can't play it; convert it to MP4 first.
-- Poster: JPEG, PNG or WebP.
+- Video: almost any format (MP4, MOV, MKV, WebM…). Mux converts it for streaming, so MOV works too.
+- Poster: taken automatically from the video (Mux thumbnail).
 
-If an upload or publish fails partway, the dashboard asks the API to delete any files it already sent to Cloudinary.
+If an upload or publish fails partway, the dashboard asks the API to delete the video it already sent to Mux.
 
 ## Important
-Only upload videos and images you own or have permission to distribute. Cloudinary delivery URLs are public and can be shared. This MVP is not a DRM system.
+Only upload videos and images you own or have permission to distribute. Mux playback URLs are public and can be shared. This MVP is not a DRM system.
 
 # watch-movie

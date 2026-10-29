@@ -2,80 +2,79 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { requireAdmin } from '../middleware/auth.js';
-import { deleteAsset, getAsset, isOwnPublicId, signUpload, uploadKinds } from '../services/cloudinary.js';
+import { config } from '../config.js';
+import { createDirectUpload, deleteAsset, discardUpload, getUploadState } from '../services/mux.js';
 
 const router = Router();
 router.use(requireAdmin);
-
-const uploadKind = z.enum(['poster', 'video']);
 
 const movieFields = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(5000).optional().default(''),
   genre: z.string().trim().max(80).nullable().optional(),
   release_year: z.number().int().min(1888).max(2100).nullable().optional(),
-  poster_public_id: z.string().refine(id => isOwnPublicId(id, 'poster'), 'Invalid poster upload.'),
-  video_public_id: z.string().refine(id => isOwnPublicId(id, 'video'), 'Invalid video upload.')
+  upload_id: z.string().min(1).max(200)
 });
 
-// Step 1: the dashboard asks for a signed upload, then sends the file directly to Cloudinary.
-router.post('/uploads/signature', (req, res) => {
-  const kind = uploadKind.safeParse(req.body?.kind);
-  if (!kind.success) return res.status(400).json({ error: 'Upload kind must be "poster" or "video".' });
-  res.json(signUpload(kind.data));
+const movieColumns = 'id, title, description, genre, release_year, mux_playback_id, created_at';
+
+// Step 1: the dashboard asks for a Mux direct-upload URL, then PUTs the video straight to Mux.
+router.post('/uploads', async (req, res, next) => {
+  try {
+    const origin = req.get('origin');
+    const corsOrigin = config.frontendUrls.includes(origin) ? origin : config.frontendUrls[0];
+    res.status(201).json(await createDirectUpload(corsOrigin));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Step 2: Mux transcodes after the upload; the dashboard polls until the video is ready.
+router.get('/uploads/:id', async (req, res, next) => {
+  try {
+    const state = await getUploadState(req.params.id);
+    if (!state) return res.status(404).json({ error: 'Upload not found.' });
+    res.json(state);
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Discards an upload that never became a movie (e.g. the admin cancelled or a later step failed).
-router.delete('/uploads', async (req, res, next) => {
+router.delete('/uploads/:id', async (req, res, next) => {
   try {
-    const kind = uploadKind.safeParse(req.body?.kind);
-    if (!kind.success || !isOwnPublicId(req.body?.public_id, kind.data)) {
-      return res.status(400).json({ error: 'Invalid upload reference.' });
+    const state = await getUploadState(req.params.id);
+    if (state?.assetId) {
+      const used = await pool.query('SELECT 1 FROM movies WHERE mux_asset_id = $1', [state.assetId]);
+      if (used.rowCount) return res.status(409).json({ error: 'That video belongs to a published movie.' });
     }
-    const column = kind.data === 'video' ? 'video_public_id' : 'poster_public_id';
-    const used = await pool.query(`SELECT 1 FROM movies WHERE ${column} = $1`, [req.body.public_id]);
-    if (used.rowCount) return res.status(409).json({ error: 'That file belongs to a published movie.' });
-
-    await deleteAsset(req.body.public_id, uploadKinds[kind.data].resourceType);
+    await discardUpload(req.params.id);
     res.json({ ok: true });
   } catch (error) {
     next(error);
   }
 });
 
-// Step 2: once both files are on Cloudinary, store the movie record in Neon.
+// Step 3: once Mux reports the video ready, store the movie record in Neon.
 router.post('/movies', async (req, res, next) => {
   try {
     const parsed = movieFields.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid movie details.' });
     const data = parsed.data;
 
-    const [poster, video] = await Promise.all([
-      getAsset(data.poster_public_id, 'image'),
-      getAsset(data.video_public_id, 'video')
-    ]);
-    if (!poster || !video) return res.status(400).json({ error: 'Uploaded media was not found on Cloudinary. Please upload again.' });
+    const state = await getUploadState(data.upload_id);
+    if (!state) return res.status(400).json({ error: 'Upload was not found on Mux. Please upload again.' });
+    if (state.status !== 'ready') return res.status(409).json({ error: 'The video is still processing on Mux. Try again in a moment.' });
 
     const result = await pool.query(
-      `INSERT INTO movies
-       (title, description, genre, release_year, poster_url, poster_public_id,
-        video_url, video_public_id, video_format)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       RETURNING id, title, description, genre, release_year, poster_url, video_url, video_format, created_at`,
-      [
-        data.title,
-        data.description,
-        data.genre || null,
-        data.release_year ?? null,
-        poster.secure_url,
-        poster.public_id,
-        video.secure_url,
-        video.public_id,
-        video.format || null
-      ]
+      `INSERT INTO movies (title, description, genre, release_year, mux_asset_id, mux_playback_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING ${movieColumns}`,
+      [data.title, data.description, data.genre || null, data.release_year ?? null, state.assetId, state.playbackId]
     );
     res.status(201).json({ movie: result.rows[0] });
   } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'That video is already published.' });
     next(error);
   }
 });
@@ -104,7 +103,7 @@ router.patch('/movies/:id', async (req, res, next) => {
     values.push(id.data);
     const result = await pool.query(
       `UPDATE movies SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${values.length}
-       RETURNING id, title, description, genre, release_year, poster_url, video_url, video_format, updated_at`,
+       RETURNING ${movieColumns}, updated_at`,
       values
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Movie not found.' });
@@ -120,15 +119,12 @@ router.delete('/movies/:id', async (req, res, next) => {
     if (!id.success) return res.status(404).json({ error: 'Movie not found.' });
     const result = await pool.query(
       `DELETE FROM movies WHERE id = $1
-       RETURNING poster_public_id, video_public_id`,
+       RETURNING mux_asset_id`,
       [id.data]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Movie not found.' });
 
-    await Promise.all([
-      deleteAsset(result.rows[0].poster_public_id, 'image'),
-      deleteAsset(result.rows[0].video_public_id, 'video')
-    ]);
+    await deleteAsset(result.rows[0].mux_asset_id);
     res.json({ ok: true });
   } catch (error) {
     next(error);

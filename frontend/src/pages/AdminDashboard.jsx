@@ -9,7 +9,6 @@ const emptyForm = { title: '', description: '', genre: '', release_year: '' };
 export default function AdminDashboard({ onLogout }) {
   const [movies, setMovies] = useState([]);
   const [form, setForm] = useState(emptyForm);
-  const [poster, setPoster] = useState(null);
   const [video, setVideo] = useState(null);
   const [status, setStatus] = useState('');
   const [progress, setProgress] = useState(0);
@@ -38,43 +37,46 @@ export default function AdminDashboard({ onLogout }) {
     event.preventDefault();
     const formEl = event.currentTarget;
     setError(''); setNotice('');
-    if (!poster || !video) {
-      setError('Choose both a poster image and a video file.');
+    if (!video) {
+      setError('Choose a video file.');
       return;
     }
 
-    const uploaded = {};
+    let uploadId = null;
     try {
-      setStatus('Uploading poster…'); setProgress(0);
-      uploaded.poster = await api.uploadMedia('poster', poster, setProgress);
-      setStatus('Uploading video…'); setProgress(0);
-      uploaded.video = await api.uploadMedia('video', video, setProgress);
+      setProgress(0);
+      const uploadedId = await api.uploadVideo(video, {
+        onProgress: setProgress,
+        onUploadId: (id) => { uploadId = id; },
+        onStatus: (step) => {
+          setStatus(step === 'uploading' ? 'Uploading video…' : 'Processing video…');
+          setProgress(0);
+        }
+      });
       setStatus('Publishing…');
       await api.createMovie({
         title: form.title,
         description: form.description,
         genre: form.genre.trim() || null,
         release_year: form.release_year === '' ? null : Number(form.release_year),
-        poster_public_id: uploaded.poster,
-        video_public_id: uploaded.video
+        upload_id: uploadedId
       });
       setForm(emptyForm);
-      setPoster(null); setVideo(null);
+      setVideo(null);
       formEl.reset();
       await loadMovies();
       setNotice('Movie uploaded and published successfully.');
     } catch (err) {
       setError(err.message);
-      // Best effort: don't leave orphaned files using Cloudinary storage.
-      if (uploaded.poster) api.discardMedia('poster', uploaded.poster).catch(() => {});
-      if (uploaded.video) api.discardMedia('video', uploaded.video).catch(() => {});
+      // Best effort: don't leave an orphaned video using Mux storage.
+      if (uploadId) api.discardUpload(uploadId).catch(() => {});
     } finally {
       setStatus(''); setProgress(0);
     }
   }
 
   async function remove(movie) {
-    if (!window.confirm(`Delete "${movie.title}" and its Cloudinary media?`)) return;
+    if (!window.confirm(`Delete "${movie.title}" and its video on Mux?`)) return;
     setError(''); setNotice('');
     try {
       await api.deleteMovie(movie.id);
@@ -104,10 +106,8 @@ export default function AdminDashboard({ onLogout }) {
                 <label>Genre<input maxLength="80" value={form.genre} onChange={e => update('genre', e.target.value)} placeholder="Drama, Action…" /></label>
                 <label>Release year<input type="number" min="1888" max="2100" value={form.release_year} onChange={e => update('release_year', e.target.value)} placeholder="2026" /></label>
               </div>
-              <label>Poster image *<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setPoster(e.target.files?.[0] || null)} required /></label>
-              <p className="field-hint">JPEG, PNG or WebP, up to 10 MB.</p>
-              <label>Movie video *<input type="file" accept="video/mp4,video/webm" onChange={e => setVideo(e.target.files?.[0] || null)} required /></label>
-              <p className="field-hint">MP4 (H.264) or WebM, up to 100 MB on the Cloudinary free plan. Uploads go straight to Cloudinary.</p>
+              <label>Movie video *<input type="file" accept="video/*" onChange={e => setVideo(e.target.files?.[0] || null)} required /></label>
+              <p className="field-hint">MP4, MOV, MKV or WebM. The upload goes straight to Mux, which converts it for streaming and picks the poster from the video.</p>
             </fieldset>
             {error && <p className="form-error">{error}</p>}
             {notice && <p className="form-success">{notice}</p>}
@@ -125,7 +125,7 @@ export default function AdminDashboard({ onLogout }) {
             {movies.length === 0 ? <p className="muted">No movies published yet.</p> :
               <div className="manage-list">{movies.map(movie => (
                 <div className="manage-item" key={movie.id}>
-                  <img src={posterUrl(movie.poster_url, 120)} alt="" />
+                  <img src={posterUrl(movie.mux_playback_id, 120)} alt="" />
                   <div className="manage-item-info"><strong>{movie.title}</strong><Link to={`/movie/${movie.id}`}>Preview movie ↗</Link></div>
                   <button className="delete-button" onClick={() => remove(movie)} aria-label={`Delete ${movie.title}`} title="Delete movie">×</button>
                 </div>

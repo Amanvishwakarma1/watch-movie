@@ -18,14 +18,22 @@ CREATE TABLE IF NOT EXISTS movies (
   description TEXT NOT NULL DEFAULT '',
   genre VARCHAR(80),
   release_year SMALLINT,
-  poster_url TEXT NOT NULL,
-  poster_public_id TEXT NOT NULL,
-  video_url TEXT NOT NULL,
-  video_public_id TEXT NOT NULL,
-  video_format VARCHAR(20),
+  mux_asset_id TEXT,
+  mux_playback_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Migration from the Cloudinary version: media now lives on Mux (posters are
+-- Mux thumbnails of the video). Safe to repeat; the old columns are dropped.
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS mux_asset_id TEXT;
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS mux_playback_id TEXT;
+ALTER TABLE movies DROP COLUMN IF EXISTS poster_url;
+ALTER TABLE movies DROP COLUMN IF EXISTS poster_public_id;
+ALTER TABLE movies DROP COLUMN IF EXISTS video_url;
+ALTER TABLE movies DROP COLUMN IF EXISTS video_public_id;
+ALTER TABLE movies DROP COLUMN IF EXISTS video_format;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_movies_mux_asset ON movies (mux_asset_id);
 CREATE INDEX IF NOT EXISTS idx_movies_created_at ON movies (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movies_title ON movies (title);
