@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Brand from './Brand.jsx';
 import { CloseIcon, SearchIcon } from './Icons.jsx';
 
 // `overlay` floats the bar over the home billboard and turns it solid on scroll.
@@ -20,10 +21,7 @@ export default function Navbar({ admin = false, onLogout, overlay = false, searc
 
   return (
     <header className={classes}>
-      <Link className="brand" to="/">
-        <span className="brand-mark">N</span>
-        <span>Night<span className="brand-light">Screen</span></span>
-      </Link>
+      <Brand />
       <nav>
         {onSearch && <SearchField value={search} onChange={onSearch} />}
         <Link className="nav-home" to="/">Home</Link>

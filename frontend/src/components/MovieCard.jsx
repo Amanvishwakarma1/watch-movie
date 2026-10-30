@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { movieMeta, posterUrl } from '../media.js';
+import { coverUrl, movieMeta } from '../media.js';
 import WatchLink from './WatchLink.jsx';
 import { PlayIcon } from './Icons.jsx';
 
@@ -15,7 +15,7 @@ export default function MovieCard({ movie }) {
       <div className={`card-media${loaded ? '' : ' skeleton'}`}>
         <img
           ref={imageRef}
-          src={posterUrl(movie.mux_playback_id, 640)}
+          src={coverUrl(movie, 640)}
           alt=""
           loading="lazy"
           className={loaded ? 'loaded' : ''}

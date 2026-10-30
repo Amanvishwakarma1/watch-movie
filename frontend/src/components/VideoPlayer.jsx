@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import MuxPlayer from '@mux/mux-player-react/lazy';
-import { posterUrl } from '../media.js';
+import { coverUrl } from '../media.js';
 import { readResume, writeResume } from '../resume.js';
 import usePlayerGestures, { formatTime } from '../usePlayerGestures.js';
 
@@ -50,7 +50,7 @@ export default function VideoPlayer({ movie, autoPlay = false }) {
         ref={playerRef}
         key={movie.mux_playback_id}
         playbackId={movie.mux_playback_id}
-        poster={posterUrl(movie.mux_playback_id, 1920)}
+        poster={coverUrl(movie, 1920)}
         metadata={{ video_title: movie.title }}
         accentColor="#e50914"
         streamType="on-demand"

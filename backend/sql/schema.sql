@@ -37,3 +37,9 @@ ALTER TABLE movies DROP COLUMN IF EXISTS video_format;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_movies_mux_asset ON movies (mux_asset_id);
 CREATE INDEX IF NOT EXISTS idx_movies_created_at ON movies (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movies_title ON movies (title);
+
+-- Optional custom cover image per movie (shrunk by the dashboard before upload,
+-- so a few hundred KB each). Without one, the site shows a frame from the video.
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS cover_image BYTEA;
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS cover_type TEXT;
+ALTER TABLE movies ADD COLUMN IF NOT EXISTS cover_updated_at TIMESTAMPTZ;

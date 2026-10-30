@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { requireAdmin } from '../middleware/auth.js';
@@ -16,7 +16,18 @@ const movieFields = z.object({
   upload_id: z.string().min(1).max(200)
 });
 
-const movieColumns = 'id, title, description, genre, release_year, mux_playback_id, created_at';
+const movieColumns = `id, title, description, genre, release_year, mux_playback_id, created_at,
+  (cover_image IS NOT NULL) AS has_cover, cover_updated_at`;
+
+// Never trust the browser's Content-Type: check the file's own signature.
+// SVG is deliberately not accepted (it can carry scripts).
+function sniffImage(buffer) {
+  if (buffer.length > 12 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.length > 12 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.length > 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return null;
+}
+const COVER_LIMIT = '3mb';
 
 // Step 1: the dashboard asks for a Mux direct-upload URL, then PUTs the video straight to Mux.
 router.post('/uploads', async (req, res, next) => {
@@ -105,6 +116,44 @@ router.patch('/movies/:id', async (req, res, next) => {
       `UPDATE movies SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${values.length}
        RETURNING ${movieColumns}, updated_at`,
       values
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Movie not found.' });
+    res.json({ movie: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put(
+  '/movies/:id/cover',
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: COVER_LIMIT }),
+  async (req, res, next) => {
+    try {
+      const id = z.string().uuid().safeParse(req.params.id);
+      if (!id.success) return res.status(404).json({ error: 'Movie not found.' });
+      const type = Buffer.isBuffer(req.body) ? sniffImage(req.body) : null;
+      if (!type) return res.status(400).json({ error: 'The cover must be a JPEG, PNG or WebP image.' });
+      const result = await pool.query(
+        `UPDATE movies SET cover_image = $1, cover_type = $2, cover_updated_at = NOW(), updated_at = NOW()
+         WHERE id = $3 RETURNING ${movieColumns}`,
+        [req.body, type, id.data]
+      );
+      if (!result.rowCount) return res.status(404).json({ error: 'Movie not found.' });
+      res.json({ movie: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.delete('/movies/:id/cover', async (req, res, next) => {
+  try {
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) return res.status(404).json({ error: 'Movie not found.' });
+    const result = await pool.query(
+      `UPDATE movies SET cover_image = NULL, cover_type = NULL, cover_updated_at = NULL, updated_at = NOW()
+       WHERE id = $1 RETURNING ${movieColumns}`,
+      [id.data]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Movie not found.' });
     res.json({ movie: result.rows[0] });

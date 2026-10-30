@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { movieMeta } from '../media.js';
 import VideoPlayer from '../components/VideoPlayer.jsx';
 import { BackIcon } from '../components/Icons.jsx';
+import { SITE_NAME, SITE_TITLE } from '../components/Brand.jsx';
 import useSlowHint from '../useSlowHint.js';
 
 // True after `delay` ms without mouse, touch or keyboard activity.
@@ -56,8 +57,8 @@ export default function Watch() {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (movie) document.title = `${movie.title} — NightScreen`;
-    return () => { document.title = 'NightScreen — Movie Streaming'; };
+    if (movie) document.title = `${movie.title} — ${SITE_NAME}`;
+    return () => { document.title = SITE_TITLE; };
   }, [movie]);
 
   // Leaving the player leaves fullscreen too.

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
-import { posterUrl } from '../media.js';
+import { coverUrl } from '../media.js';
+import { prepareCover } from '../cover.js';
 import Navbar from '../components/Navbar.jsx';
 
 const emptyForm = { title: '', description: '', genre: '', release_year: '' };
@@ -10,11 +11,14 @@ export default function AdminDashboard({ onLogout }) {
   const [movies, setMovies] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [video, setVideo] = useState(null);
+  const [cover, setCover] = useState(null);
+  const [coverBusy, setCoverBusy] = useState(null); // id of the movie whose cover is being changed
   const [status, setStatus] = useState('');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [elapsed, setElapsed] = useState(0);
+  const [editing, setEditing] = useState(null); // { id, title, saving }
   const busy = Boolean(status);
   const processing = status === 'Processing video…';
 
@@ -66,24 +70,66 @@ export default function AdminDashboard({ onLogout }) {
         }
       });
       setStatus('Publishing…');
-      await api.createMovie({
+      const created = await api.createMovie({
         title: form.title,
         description: form.description,
         genre: form.genre.trim() || null,
         release_year: form.release_year === '' ? null : Number(form.release_year),
         upload_id: uploadedId
       });
+      uploadId = null; // published: from here on a failure must not discard the video
+      let coverProblem = '';
+      if (cover) {
+        try {
+          await api.setCover(created.movie.id, await prepareCover(cover));
+        } catch (err) {
+          coverProblem = err.message;
+        }
+      }
       setForm(emptyForm);
       setVideo(null);
+      setCover(null);
       formEl.reset();
       await loadMovies();
-      setNotice('Movie uploaded and published successfully.');
+      if (coverProblem) setError(`The movie is published, but its cover was not saved: ${coverProblem} Use "Change cover" on the movie below.`);
+      else setNotice('Movie uploaded and published successfully.');
     } catch (err) {
       setError(err.message);
       // Best effort: don't leave an orphaned video using Mux storage.
       if (uploadId) api.discardUpload(uploadId).catch(() => {});
     } finally {
       setStatus(''); setProgress(0);
+    }
+  }
+
+  function replaceMovie(updated) {
+    setMovies(current => current.map(item => (item.id === updated.id ? { ...item, ...updated } : item)));
+  }
+
+  async function changeCover(movie, file) {
+    if (!file) return;
+    setError(''); setNotice(''); setCoverBusy(movie.id);
+    try {
+      const data = await api.setCover(movie.id, await prepareCover(file));
+      replaceMovie(data.movie);
+      setNotice(`Cover updated for "${movie.title}".`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCoverBusy(null);
+    }
+  }
+
+  async function removeCover(movie) {
+    setError(''); setNotice(''); setCoverBusy(movie.id);
+    try {
+      const data = await api.removeCover(movie.id);
+      replaceMovie(data.movie);
+      setNotice(`Cover removed from "${movie.title}". The site now shows a frame from the video.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCoverBusy(null);
     }
   }
 
@@ -96,6 +142,24 @@ export default function AdminDashboard({ onLogout }) {
       setNotice(`Deleted "${movie.title}".`);
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function saveTitle(event) {
+    event.preventDefault();
+    const title = editing.title.trim();
+    const movie = movies.find(item => item.id === editing.id);
+    if (!title || title === movie.title) { setEditing(null); return; }
+    setError(''); setNotice('');
+    setEditing({ ...editing, saving: true });
+    try {
+      const data = await api.updateMovie(editing.id, { title });
+      setMovies(current => current.map(item => (item.id === editing.id ? { ...item, title: data.movie.title } : item)));
+      setNotice(`Renamed to "${data.movie.title}".`);
+      setEditing(null);
+    } catch (err) {
+      setError(err.message);
+      setEditing({ ...editing, saving: false });
     }
   }
 
@@ -119,7 +183,10 @@ export default function AdminDashboard({ onLogout }) {
                 <label>Release year<input type="number" min="1888" max="2100" value={form.release_year} onChange={e => update('release_year', e.target.value)} placeholder="2026" /></label>
               </div>
               <label>Movie video *<input type="file" accept="video/*" onChange={e => setVideo(e.target.files?.[0] || null)} required /></label>
-              <p className="field-hint">MP4, MOV, MKV or WebM. The upload goes straight to Mux, which converts it for streaming and picks the poster from the video.</p>
+
+              <p className="field-hint">MP4, MOV, MKV or WebM. The upload goes straight to Mux, which converts it for streaming.</p>
+              <label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setCover(e.target.files?.[0] || null)} /></label>
+              <p className="field-hint">Optional. A wide (16:9) JPEG, PNG or WebP picture works best, since cards are widescreen. It is shrunk automatically. Without one, the site uses a frame from the video.</p>
             </fieldset>
             {error && <p className="form-error">{error}</p>}
             {notice && <p className="form-success">{notice}</p>}
@@ -149,8 +216,41 @@ export default function AdminDashboard({ onLogout }) {
             {movies.length === 0 ? <p className="muted">No movies published yet.</p> :
               <div className="manage-list">{movies.map(movie => (
                 <div className="manage-item" key={movie.id}>
-                  <img src={posterUrl(movie.mux_playback_id, 120)} alt="" />
-                  <div className="manage-item-info"><strong>{movie.title}</strong><Link to={`/movie/${movie.id}`}>Preview movie ↗</Link></div>
+                  <img src={coverUrl(movie, 160)} alt="" />
+                  {editing?.id === movie.id ? (
+                    <form className="rename-form" onSubmit={saveTitle}>
+                      <input
+                        autoFocus
+                        maxLength="200"
+                        value={editing.title}
+                        onChange={e => setEditing({ ...editing, title: e.target.value })}
+                        onKeyDown={e => { if (e.key === 'Escape') setEditing(null); }}
+                        aria-label="Movie title"
+                        disabled={editing.saving}
+                        required
+                      />
+                      <button className="button button-primary button-small" disabled={editing.saving}>{editing.saving ? 'Saving…' : 'Save'}</button>
+                      <button type="button" className="button button-quiet button-small" onClick={() => setEditing(null)} disabled={editing.saving}>Cancel</button>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="manage-item-info">
+                        <strong>{movie.title}</strong>
+                        <span className="manage-links">
+                          <Link to={`/movie/${movie.id}`}>Preview movie ↗</Link>
+                          <button type="button" className="link-button" onClick={() => setEditing({ id: movie.id, title: movie.title })}>Rename</button>
+                          <label className={`link-button${coverBusy === movie.id ? ' disabled' : ''}`}>
+                            {coverBusy === movie.id ? 'Saving…' : 'Change cover'}
+                            <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={coverBusy === movie.id}
+                              onChange={e => { changeCover(movie, e.target.files?.[0]); e.target.value = ''; }} />
+                          </label>
+                          {movie.has_cover && (
+                            <button type="button" className="link-button" disabled={coverBusy === movie.id} onClick={() => removeCover(movie)}>Remove cover</button>
+                          )}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <button className="delete-button" onClick={() => remove(movie)} aria-label={`Delete ${movie.title}`} title="Delete movie">×</button>
                 </div>
               ))}</div>

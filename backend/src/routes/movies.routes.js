@@ -5,7 +5,8 @@ import { pool } from '../db/pool.js';
 const router = Router();
 
 const publicColumns = `id, title, description, genre, release_year,
-  mux_playback_id, created_at, updated_at`;
+  mux_playback_id, created_at, updated_at,
+  (cover_image IS NOT NULL) AS has_cover, cover_updated_at`;
 
 router.get('/', async (req, res, next) => {
   try {
@@ -36,6 +37,29 @@ router.get('/', async (req, res, next) => {
       movies: items.rows,
       pagination: { page, limit, total: count.rows[0].total }
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// The cover bytes. The URL carries ?v=<cover_updated_at>, so browsers may cache it for good.
+router.get('/:id/cover', async (req, res, next) => {
+  try {
+    const id = z.string().uuid().safeParse(req.params.id);
+    if (!id.success) return res.status(404).end();
+    const result = await pool.query(
+      'SELECT cover_image, cover_type FROM movies WHERE id = $1 AND cover_image IS NOT NULL',
+      [id.data]
+    );
+    if (!result.rowCount) return res.status(404).end();
+    const { cover_image: image, cover_type: type } = result.rows[0];
+    res.set({
+      'Content-Type': type,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      // The site lives on another origin; helmet's default would block the <img>.
+      'Cross-Origin-Resource-Policy': 'cross-origin'
+    });
+    res.send(image);
   } catch (error) {
     next(error);
   }

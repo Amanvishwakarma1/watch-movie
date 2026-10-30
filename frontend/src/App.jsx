@@ -7,7 +7,7 @@ import AdminLogin from './pages/AdminLogin.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 
 function ProtectedAdmin({ admin, checked, children }) {
-  if (!checked) return <div className="initial-loader">N<span>.</span></div>;
+  if (!checked) return <div className="initial-loader">M<span>.</span></div>;
   return admin ? children : <Navigate to="/admin/login" replace />;
 }
 

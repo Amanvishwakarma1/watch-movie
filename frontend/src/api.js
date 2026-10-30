@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 const TOKEN_KEY = 'movie_admin_token';
 
 export const session = {
@@ -87,5 +87,9 @@ export const api = {
     request('/api/admin/movies', { method: 'POST', body: JSON.stringify(fields) }),
   updateMovie: (id, fields) =>
     request(`/api/admin/movies/${id}`, { method: 'PATCH', body: JSON.stringify(fields) }),
+  // `blob` is an image; the server checks the file itself, not this header.
+  setCover: (id, blob) =>
+    request(`/api/admin/movies/${id}/cover`, { method: 'PUT', body: blob, headers: { 'Content-Type': blob.type } }),
+  removeCover: (id) => request(`/api/admin/movies/${id}/cover`, { method: 'DELETE' }),
   deleteMovie: (id) => request(`/api/admin/movies/${id}`, { method: 'DELETE' })
 };

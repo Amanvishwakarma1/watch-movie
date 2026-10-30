@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { readResume } from '../resume.js';
 import Navbar from '../components/Navbar.jsx';
+import Brand, { SITE_NAME } from '../components/Brand.jsx';
 import Billboard from '../components/Billboard.jsx';
 import MovieRow from '../components/MovieRow.jsx';
 import MovieCard from '../components/MovieCard.jsx';
@@ -24,7 +24,7 @@ function buildRows(movies) {
   const rows = [];
   const started = movies.filter(movie => readResume(movie.id));
   if (started.length) rows.push({ title: 'Continue watching', movies: started });
-  rows.push({ title: 'New on NightScreen', movies });
+  rows.push({ title: `New on ${SITE_NAME}`, movies });
 
   const byGenre = new Map();
   for (const movie of movies) {
@@ -34,7 +34,7 @@ function buildRows(movies) {
       byGenre.get(key).movies.push(movie);
     }
   }
-  // A genre row that holds every movie would just repeat "New on NightScreen".
+  // A genre row that holds every movie would just repeat the "New on" row.
   const genreRows = [...byGenre.values()].filter(row => row.movies.length < movies.length);
   genreRows.sort((a, b) => b.movies.length - a.movies.length);
   return rows.concat(genreRows);
@@ -136,7 +136,7 @@ export default function Home() {
     <div className="app-shell">
       <Navbar overlay search={search} onSearch={setSearch} />
       <main className="home">{content}</main>
-      <footer className="footer"><Link className="brand" to="/"><span className="brand-mark">N</span><span>Night<span className="brand-light">Screen</span></span></Link><span>Made for movie nights.</span></footer>
+      <footer className="footer"><Brand /><span>Made for movie nights.</span></footer>
     </div>
   );
 }

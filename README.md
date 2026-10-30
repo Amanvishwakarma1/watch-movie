@@ -1,4 +1,4 @@
-# NightScreen — Movie Streaming MVP
+# Movie Max — Movie Streaming MVP
 
 React + Vite frontend, Express API, Neon PostgreSQL, Mux video hosting. Built to run entirely on free tiers.
 
