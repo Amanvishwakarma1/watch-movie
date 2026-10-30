@@ -85,12 +85,18 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
     const { username, password } = parsed.data;
 
+    // Accounts flagged is_admin can upload content, so this open reset must never
+    // touch them: it would hand the dashboard to anyone who knows the username.
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'UPDATE users SET password_hash = $1 WHERE username = $2 RETURNING id, username',
+      'UPDATE users SET password_hash = $1 WHERE username = $2 AND NOT is_admin RETURNING id, username',
       [hash, username]
     );
-    if (!result.rowCount) return res.status(404).json({ error: 'No account with that username. Check the spelling, or create an account.' });
+    if (!result.rowCount) {
+      const locked = await pool.query('SELECT 1 FROM users WHERE username = $1', [username]);
+      if (locked.rowCount) return res.status(403).json({ error: "This account's password can't be reset here. Ask the site owner." });
+      return res.status(404).json({ error: 'No account with that username. Check the spelling, or create an account.' });
+    }
     const user = result.rows[0];
     res.json({ user: { username: user.username }, token: signUserToken(user) });
   } catch (error) {

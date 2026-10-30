@@ -10,7 +10,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:setup": "node scripts/create-admin.js",
-    "admin:create": "node scripts/create-admin.js"
+    "admin:create": "node scripts/create-admin.js",
+    "user:admin": "node scripts/make-admin.js"
   },
   "dependencies": {
     "@mux/mux-node": "^15.5.0",

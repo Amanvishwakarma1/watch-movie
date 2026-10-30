@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
+-- Set only by the owner in the database (npm run user:admin -- <username>), never
+-- through the API. A flagged viewer account may also sign in to the dashboard.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS watch_progress (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   movie_id UUID NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
