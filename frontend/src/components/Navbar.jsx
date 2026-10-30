@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Brand from './Brand.jsx';
-import { CloseIcon, SearchIcon } from './Icons.jsx';
+import { CloseIcon, SearchIcon, UploadIcon } from './Icons.jsx';
+import { session } from '../api.js';
 import { useViewer } from '../viewer.jsx';
 
 // `overlay` floats the bar over the home billboard and turns it solid on scroll.
@@ -20,6 +21,9 @@ export default function Navbar({ admin = false, onLogout, overlay = false, searc
   }, [overlay]);
 
   const classes = ['topbar', overlay && 'overlay', overlay && (scrolled || search) && 'solid'].filter(Boolean).join(' ');
+  // Only the owner's accounts see this: an admin viewer, or anyone with a dashboard session.
+  // The button is a convenience; the API still checks the token on every upload or edit.
+  const canUpload = Boolean(viewer.user?.is_admin || session.get());
 
   return (
     <header className={classes}>
@@ -35,14 +39,23 @@ export default function Navbar({ admin = false, onLogout, overlay = false, searc
               navigate('/admin/login');
             }}>Sign out</button>
           </>
-        ) : !hideAccount && (viewer.user ? (
+        ) : !hideAccount && (
           <>
-            <span className="nav-user" title={`Signed in as ${viewer.user.username}`}>{viewer.user.username}</span>
-            <button className="button button-quiet button-small" onClick={viewer.logout}>Sign out</button>
+            {canUpload && (
+              <Link className="nav-upload" to="/admin" title="Upload and edit movies" aria-label="Upload and edit movies">
+                <UploadIcon /><span>Upload</span>
+              </Link>
+            )}
+            {viewer.user ? (
+              <>
+                <span className="nav-user" title={`Signed in as ${viewer.user.username}`}>{viewer.user.username}</span>
+                <button className="button button-quiet button-small" onClick={viewer.logout}>Sign out</button>
+              </>
+            ) : (
+              <Link className="button button-small nav-signin" to="/login">Sign in</Link>
+            )}
           </>
-        ) : (
-          <Link className="button button-small nav-signin" to="/login">Sign in</Link>
-        ))}
+        )}
       </nav>
     </header>
   );

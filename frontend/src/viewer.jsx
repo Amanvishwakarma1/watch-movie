@@ -59,6 +59,8 @@ export function ViewerProvider({ children }) {
   const resetPassword = useCallback((username, password) => authenticate(() => api.resetPassword(username, password)), [authenticate]);
 
   const logout = useCallback(() => {
+    // An admin account's dashboard session ends with its viewer sign-in.
+    if (userRef.current?.is_admin) api.logout();
     api.viewerLogout();
     setUser(null);
     setProgress({});

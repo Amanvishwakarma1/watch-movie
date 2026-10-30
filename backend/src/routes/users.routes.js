@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
-import { requireUser, signUserToken } from '../middleware/auth.js';
+import { requireUser, signAdminToken, signUserToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -27,6 +27,9 @@ const credentials = z.object({
 // Compared against when the username does not exist, so a miss takes as long as a hit.
 const dummyHash = bcrypt.hashSync('not-a-real-password', 10);
 
+// is_admin tells the site to show the Upload button; the API still checks the token.
+const publicUser = (user) => ({ username: user.username, is_admin: user.is_admin });
+
 router.post('/signup', limiter(20), async (req, res, next) => {
   try {
     const parsed = credentials.safeParse(req.body);
@@ -35,11 +38,11 @@ router.post('/signup', limiter(20), async (req, res, next) => {
 
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username',
+      'INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id, username, is_admin',
       [username, hash]
     );
     const user = result.rows[0];
-    res.status(201).json({ user: { username: user.username }, token: signUserToken(user) });
+    res.status(201).json({ user: publicUser(user), token: signUserToken(user) });
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That username is already taken.' });
     next(error);
@@ -55,14 +58,18 @@ router.post('/login', limiter(10), async (req, res, next) => {
     if (!parsed.success) return res.status(400).json({ error: 'Enter username and password.' });
 
     const result = await pool.query(
-      'SELECT id, username, password_hash FROM users WHERE username = $1',
+      'SELECT id, username, password_hash, is_admin FROM users WHERE username = $1',
       [parsed.data.username]
     );
     const user = result.rows[0];
     const valid = await bcrypt.compare(parsed.data.password, user ? user.password_hash : dummyHash);
     if (!user || !valid) return res.status(401).json({ error: 'Invalid username or password.' });
 
-    res.json({ user: { username: user.username }, token: signUserToken(user) });
+    const body = { user: publicUser(user), token: signUserToken(user) };
+    // A flagged account gets its dashboard session in the same sign-in (same 8 h token
+    // and same password check as /api/auth/login), so it never has to sign in twice.
+    if (user.is_admin) body.adminToken = signAdminToken(user);
+    res.json(body);
   } catch (error) {
     next(error);
   }
@@ -89,7 +96,7 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
     // touch them: it would hand the dashboard to anyone who knows the username.
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'UPDATE users SET password_hash = $1 WHERE username = $2 AND NOT is_admin RETURNING id, username',
+      'UPDATE users SET password_hash = $1 WHERE username = $2 AND NOT is_admin RETURNING id, username, is_admin',
       [hash, username]
     );
     if (!result.rowCount) {
@@ -98,7 +105,7 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
       return res.status(404).json({ error: 'No account with that username. Check the spelling, or create an account.' });
     }
     const user = result.rows[0];
-    res.json({ user: { username: user.username }, token: signUserToken(user) });
+    res.json({ user: publicUser(user), token: signUserToken(user) });
   } catch (error) {
     next(error);
   }
@@ -107,9 +114,9 @@ router.post('/reset-password', resetLimiter, async (req, res, next) => {
 router.get('/me', requireUser, async (req, res, next) => {
   try {
     // The account may have been removed since the token was issued.
-    const result = await pool.query('SELECT username FROM users WHERE id = $1', [req.user.id]);
+    const result = await pool.query('SELECT username, is_admin FROM users WHERE id = $1', [req.user.id]);
     if (!result.rowCount) return res.status(401).json({ error: 'Please sign in again.' });
-    res.json({ user: { username: result.rows[0].username } });
+    res.json({ user: publicUser(result.rows[0]) });
   } catch (error) {
     next(error);
   }

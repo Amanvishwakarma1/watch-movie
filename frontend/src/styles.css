@@ -148,6 +148,10 @@
 .nav-signin:hover{background:#f6121d}
 .topbar nav a.nav-signin:hover{color:#fff}
 .nav-user{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6e4ee;font-size:13px;font-weight:600}
+.topbar nav a.nav-upload{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border:1px solid #ffffff59;border-radius:6px;background:#ffffff14;color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.topbar nav a.nav-upload:hover{background:#ffffff2e;color:#fff}
+.nav-upload svg{font-size:16px}
+@media(max-width:600px){.topbar nav a.nav-upload{padding:8px 10px}.nav-upload span{display:none}.nav-upload svg{font-size:18px}.topbar:has(.nav-search.open) a.nav-upload{display:none}}
 .auth-switch{margin:18px 0 0;text-align:center;font-size:12px;color:var(--muted)}
 .auth-switch .link-button{font-size:12px}
 .auth-form .field-hint{margin-top:-8px}

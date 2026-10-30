@@ -29,7 +29,7 @@ export default function AdminLogin({ onLogin }) {
 
   return (
     <div className="app-shell">
-      <Navbar />
+      <Navbar hideAccount />
       <main className="auth-page">
         <form className="admin-form auth-form" onSubmit={submit}>
           <p className="eyebrow">RESTRICTED ACCESS</p>

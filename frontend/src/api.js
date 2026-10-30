@@ -2,10 +2,16 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:
 const TOKEN_KEY = 'movie_admin_token';
 const VIEWER_TOKEN_KEY = 'movie_viewer_token';
 
+// Listeners hear when the admin token goes away (sign out, expiry, or a viewer who
+// was an admin signing out), so the app can drop its signed-in state.
+const listeners = new Set();
+const notify = () => listeners.forEach(listener => listener());
+
 export const session = {
   get: () => { try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; } },
-  set: (token) => { try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable */ } },
-  clear: () => { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ } }
+  set: (token) => { try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* storage unavailable */ } notify(); },
+  clear: () => { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ } notify(); },
+  subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); }
 };
 
 // Viewer accounts stay signed in across visits (localStorage); the admin session
@@ -80,6 +86,8 @@ export const api = {
   viewerLogin: async (username, password) => {
     const data = await request('/api/users/login', { method: 'POST', as: 'viewer', body: JSON.stringify({ username, password }) });
     viewerSession.set(data.token);
+    // Accounts the owner marked as admin also get the dashboard session.
+    if (data.adminToken) session.set(data.adminToken);
     return data;
   },
   resetPassword: async (username, password) => {
