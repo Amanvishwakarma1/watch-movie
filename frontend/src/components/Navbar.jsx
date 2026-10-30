@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Brand from './Brand.jsx';
 import { CloseIcon, SearchIcon } from './Icons.jsx';
+import { useViewer } from '../viewer.jsx';
 
 // `overlay` floats the bar over the home billboard and turns it solid on scroll.
 // Passing `onSearch` adds the search field.
-export default function Navbar({ admin = false, onLogout, overlay = false, search = '', onSearch }) {
+export default function Navbar({ admin = false, onLogout, overlay = false, search = '', onSearch, hideAccount = false }) {
   const navigate = useNavigate();
+  const viewer = useViewer();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -33,9 +35,14 @@ export default function Navbar({ admin = false, onLogout, overlay = false, searc
               navigate('/admin/login');
             }}>Sign out</button>
           </>
+        ) : !hideAccount && (viewer.user ? (
+          <>
+            <span className="nav-user" title={`Signed in as ${viewer.user.username}`}>{viewer.user.username}</span>
+            <button className="button button-quiet button-small" onClick={viewer.logout}>Sign out</button>
+          </>
         ) : (
-          <Link className="admin-link" to="/admin/login">Admin</Link>
-        )}
+          <Link className="button button-small nav-signin" to="/login">Sign in</Link>
+        ))}
       </nav>
     </header>
   );

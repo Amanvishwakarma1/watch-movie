@@ -11,6 +11,30 @@ export function signAdminToken(admin) {
   );
 }
 
+export function signUserToken(user) {
+  return jwt.sign(
+    { role: 'user', username: user.username },
+    config.jwtSecret,
+    { subject: user.id, issuer: 'movie-streaming', expiresIn: '30d' }
+  );
+}
+
+// Viewer accounts. The role claim keeps viewer and admin tokens from being
+// interchangeable: requireAdmin rejects 'user' tokens and this rejects 'admin' ones.
+export function requireUser(req, res, next) {
+  const [scheme, token] = (req.get('authorization') || '').split(' ');
+  if (scheme !== 'Bearer' || !token) return res.status(401).json({ error: 'Please sign in.' });
+
+  try {
+    const payload = jwt.verify(token, config.jwtSecret, { issuer: 'movie-streaming' });
+    if (payload.role !== 'user') return res.status(401).json({ error: 'Invalid session.' });
+    req.user = { id: payload.sub, username: payload.username };
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Please sign in again.' });
+  }
+}
+
 export function requireAdmin(req, res, next) {
   const [scheme, token] = (req.get('authorization') || '').split(' ');
   if (scheme !== 'Bearer' || !token) return res.status(401).json({ error: 'Admin login required.' });

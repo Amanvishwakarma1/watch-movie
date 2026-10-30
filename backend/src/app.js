@@ -5,6 +5,7 @@ import { config } from './config.js';
 import authRoutes from './routes/auth.routes.js';
 import moviesRoutes from './routes/movies.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import usersRoutes from './routes/users.routes.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -20,6 +21,7 @@ app.use(express.json({ limit: '100kb' }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/movies', moviesRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));

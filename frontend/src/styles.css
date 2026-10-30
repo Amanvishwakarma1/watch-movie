@@ -142,3 +142,17 @@
 .rename-form{display:flex;flex:1;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
 .rename-form input{flex:1 1 140px;min-width:0;padding:8px 10px;border:1px solid #343240;border-radius:8px;background:#0d0d13;color:#fff;font-size:13px;outline:none}
 .rename-form input:focus{border-color:#a56ce2}
+
+/* Viewer accounts */
+.nav-signin{background:#e50914;color:#fff;border:0;border-radius:6px;padding:9px 16px;font-size:13px}
+.nav-signin:hover{background:#f6121d}
+.topbar nav a.nav-signin:hover{color:#fff}
+.nav-user{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e6e4ee;font-size:13px;font-weight:600}
+.auth-switch{margin:18px 0 0;text-align:center;font-size:12px;color:var(--muted)}
+.auth-switch .link-button{font-size:12px}
+.auth-form .field-hint{margin-top:-8px}
+.footer a{color:#a9a7b7}
+.footer a:hover{color:#fff}
+.card-progress{position:absolute;left:0;right:0;bottom:0;z-index:1;height:4px;background:#ffffff4d}
+.card-progress>div{height:100%;background:#e50914}
+@media(max-width:600px){.nav-user{display:none}}

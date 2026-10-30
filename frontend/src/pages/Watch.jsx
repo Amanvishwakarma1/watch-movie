@@ -6,6 +6,7 @@ import VideoPlayer from '../components/VideoPlayer.jsx';
 import { BackIcon } from '../components/Icons.jsx';
 import { SITE_NAME, SITE_TITLE } from '../components/Brand.jsx';
 import useSlowHint from '../useSlowHint.js';
+import { useViewer } from '../viewer.jsx';
 
 // True after `delay` ms without mouse, touch or keyboard activity.
 function useIdle(delay = 3000) {
@@ -37,7 +38,9 @@ export default function Watch() {
   const [autoPlay] = useState(() => Boolean(handed && location.state.autoplay));
   const [movie, setMovie] = useState(handed);
   const [error, setError] = useState('');
-  const loading = !movie && !error;
+  // Wait for the viewer's saved position too, so the movie opens where they stopped.
+  const { ready } = useViewer();
+  const loading = (!movie && !error) || (!error && !ready);
   const slow = useSlowHint(loading);
   const idle = useIdle();
 

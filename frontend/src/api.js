@@ -1,5 +1,6 @@
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 const TOKEN_KEY = 'movie_admin_token';
+const VIEWER_TOKEN_KEY = 'movie_viewer_token';
 
 export const session = {
   get: () => { try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; } },
@@ -7,14 +8,25 @@ export const session = {
   clear: () => { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* storage unavailable */ } }
 };
 
+// Viewer accounts stay signed in across visits (localStorage); the admin session
+// ends with the tab (sessionStorage). They are separate tokens for separate APIs.
+export const viewerSession = {
+  get: () => { try { return localStorage.getItem(VIEWER_TOKEN_KEY); } catch { return null; } },
+  set: (token) => { try { localStorage.setItem(VIEWER_TOKEN_KEY, token); } catch { /* storage unavailable */ } },
+  clear: () => { try { localStorage.removeItem(VIEWER_TOKEN_KEY); } catch { /* storage unavailable */ } }
+};
+
+// `as: 'viewer'` sends the viewer's token instead of the admin's.
 async function request(path, options = {}) {
-  const token = session.get();
+  const { as = 'admin', ...fetchOptions } = options;
+  const store = as === 'viewer' ? viewerSession : session;
+  const token = store.get();
   const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(fetchOptions.body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
+      ...fetchOptions.headers
     }
   }).catch(() => {
     throw new Error('Cannot reach the server. Please try again in a moment.');
@@ -22,8 +34,8 @@ async function request(path, options = {}) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) session.clear();
-    throw new Error(data.error || `Request failed (${response.status})`);
+    if (response.status === 401) store.clear();
+    throw Object.assign(new Error(data.error || `Request failed (${response.status})`), { status: response.status });
   }
   return data;
 }
@@ -58,6 +70,33 @@ export const api = {
     return data;
   },
   me: () => request('/api/auth/me'),
+
+  // Viewer accounts (username + password) and per-viewer watch progress.
+  signup: async (username, password) => {
+    const data = await request('/api/users/signup', { method: 'POST', as: 'viewer', body: JSON.stringify({ username, password }) });
+    viewerSession.set(data.token);
+    return data;
+  },
+  viewerLogin: async (username, password) => {
+    const data = await request('/api/users/login', { method: 'POST', as: 'viewer', body: JSON.stringify({ username, password }) });
+    viewerSession.set(data.token);
+    return data;
+  },
+  resetPassword: async (username, password) => {
+    const data = await request('/api/users/reset-password', { method: 'POST', as: 'viewer', body: JSON.stringify({ username, password }) });
+    viewerSession.set(data.token);
+    return data;
+  },
+  viewerMe: () => request('/api/users/me', { as: 'viewer' }),
+  viewerLogout: () => viewerSession.clear(),
+  getProgress: () => request('/api/users/progress', { as: 'viewer' }),
+  saveProgress: (movieId, position, duration, { keepalive = false } = {}) =>
+    request(`/api/users/progress/${encodeURIComponent(movieId)}`, {
+      method: 'PUT', as: 'viewer', keepalive, body: JSON.stringify({ position, duration })
+    }),
+  clearProgress: (movieId) =>
+    request(`/api/users/progress/${encodeURIComponent(movieId)}`, { method: 'DELETE', as: 'viewer' }),
+
   logout: () => session.clear(),
   // Uploads a video to Mux and waits until it is playable. Returns the upload id.
   // onStatus receives 'uploading' then 'processing'; onUploadId fires as soon as the id exists

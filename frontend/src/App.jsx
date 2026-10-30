@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { api, session } from './api.js';
 import Home from './pages/Home.jsx';
 import Watch from './pages/Watch.jsx';
+import Account from './pages/Account.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 
@@ -38,6 +39,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/movie/:id" element={<Watch />} />
+      <Route path="/login" element={<Account />} />
       <Route path="/admin/login" element={
         admin ? <Navigate to="/admin" replace /> : <AdminLogin onLogin={refreshAdmin} />
       } />

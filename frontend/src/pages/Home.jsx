@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api.js';
-import { readResume } from '../resume.js';
 import Navbar from '../components/Navbar.jsx';
 import Brand, { SITE_NAME } from '../components/Brand.jsx';
 import Billboard from '../components/Billboard.jsx';
@@ -8,6 +8,7 @@ import MovieRow from '../components/MovieRow.jsx';
 import MovieCard from '../components/MovieCard.jsx';
 import { BillboardSkeleton, GridSkeleton, RowSkeleton } from '../components/Skeletons.jsx';
 import useSlowHint from '../useSlowHint.js';
+import { useViewer } from '../viewer.jsx';
 
 const PAGE_SIZE = 50; // the API's maximum
 
@@ -20,9 +21,9 @@ const wakeHint = 'Waking up the server — this can take up to a minute after a 
 // "Action, Thriller" → ['Action', 'Thriller']
 const splitGenres = (genre) => (genre || '').split(/[,/|]/).map(g => g.trim()).filter(Boolean);
 
-function buildRows(movies) {
+// `started` = this viewer's unfinished movies, most recently watched first.
+function buildRows(movies, started) {
   const rows = [];
-  const started = movies.filter(movie => readResume(movie.id));
   if (started.length) rows.push({ title: 'Continue watching', movies: started });
   rows.push({ title: `New on ${SITE_NAME}`, movies });
 
@@ -48,7 +49,8 @@ export default function Home() {
   const [loading, setLoading] = useState(!catalogCache);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const slow = useSlowHint(loading);
+  const { progress, ready } = useViewer();
+  const slow = useSlowHint(loading || !ready);
   const searching = search.trim() !== '';
 
   useEffect(() => {
@@ -85,7 +87,11 @@ export default function Home() {
     }
   }
 
-  const rows = useMemo(() => buildRows(movies), [movies]);
+  // Movies this viewer has started, most recently watched first.
+  const started = useMemo(() => movies
+    .filter(movie => progress[movie.id])
+    .sort((a, b) => progress[b.id].updatedAt.localeCompare(progress[a.id].updatedAt)), [movies, progress]);
+  const rows = useMemo(() => buildRows(movies, started), [movies, started]);
 
   const moreButton = movies.length < total && (
     <div className="load-more">
@@ -106,7 +112,7 @@ export default function Home() {
           <div className="empty-state"><h3>No matches just yet.</h3><p>Try another title or genre.</p></div>}
       </section>
     );
-  } else if (loading) {
+  } else if (loading || !ready) {
     content = (
       <>
         <BillboardSkeleton>
@@ -123,7 +129,7 @@ export default function Home() {
   } else if (movies.length) {
     content = (
       <>
-        <Billboard movie={movies[0]} />
+        <Billboard movie={started[0] || movies[0]} resume={started[0] && progress[started[0].id]} />
         <div className="rows">{rows.map(row => <MovieRow key={row.title} title={row.title} movies={row.movies} />)}</div>
         {moreButton}
       </>
@@ -136,7 +142,7 @@ export default function Home() {
     <div className="app-shell">
       <Navbar overlay search={search} onSearch={setSearch} />
       <main className="home">{content}</main>
-      <footer className="footer"><Brand /><span>Made for movie nights.</span></footer>
+      <footer className="footer"><Brand /><span>Made for movie nights. · <Link to="/admin/login">Admin</Link></span></footer>
     </div>
   );
 }

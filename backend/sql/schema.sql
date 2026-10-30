@@ -43,3 +43,25 @@ CREATE INDEX IF NOT EXISTS idx_movies_title ON movies (title);
 ALTER TABLE movies ADD COLUMN IF NOT EXISTS cover_image BYTEA;
 ALTER TABLE movies ADD COLUMN IF NOT EXISTS cover_type TEXT;
 ALTER TABLE movies ADD COLUMN IF NOT EXISTS cover_updated_at TIMESTAMPTZ;
+
+-- Viewer accounts (username + password) and where each viewer stopped watching.
+-- Usernames are stored lowercase. Like admins, these tables get RLS with no
+-- policies so Neon's Data API roles can never read password hashes.
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username VARCHAR(30) UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS watch_progress (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  movie_id UUID NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+  position_seconds INTEGER NOT NULL,
+  duration_seconds INTEGER NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, movie_id)
+);
+ALTER TABLE watch_progress ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_watch_progress_recent ON watch_progress (user_id, updated_at DESC);

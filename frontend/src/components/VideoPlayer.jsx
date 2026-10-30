@@ -1,20 +1,46 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import MuxPlayer from '@mux/mux-player-react/lazy';
 import { coverUrl } from '../media.js';
-import { readResume, writeResume } from '../resume.js';
 import usePlayerGestures, { formatTime } from '../usePlayerGestures.js';
+import { useViewer } from '../viewer.jsx';
 
 // Mux streams in ~2 s HLS chunks. hls.js would otherwise keep buffering up to
 // 10 minutes ahead on low-bitrate movies; stay 30-60 s ahead to save viewers' data.
 const hlsConfig = { maxBufferLength: 30, maxMaxBufferLength: 60 };
 const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const SAVE_EVERY = 15; // seconds of playback between saves to the viewer's account
 
 export default function VideoPlayer({ movie, autoPlay = false }) {
   const shellRef = useRef(null);
-  const savedAt = useRef(0);
-  const [resumeAt] = useState(() => readResume(movie.id));
+  const viewer = useViewer();
+  // Where this viewer stopped last time (nothing for guests). Read once, on open.
+  const [resumeAt] = useState(() => viewer.progress[movie.id]?.position || 0);
   const [showResume, setShowResume] = useState(resumeAt > 0);
   const { feedback, scrub } = usePlayerGestures(shellRef);
+
+  // The latest values, readable from event handlers and cleanup without re-subscribing.
+  const latest = useRef({ time: 0, duration: 0, played: false, sentAt: 0 });
+  const save = useRef(viewer.saveProgress);
+  save.current = viewer.saveProgress;
+  const signedIn = Boolean(viewer.user);
+
+  const flush = useCallback((options) => {
+    const state = latest.current;
+    // Until playback really started, currentTime is 0 and must not overwrite a saved position.
+    if (!signedIn || !state.played || !state.duration) return;
+    state.sentAt = state.time;
+    save.current(movie.id, state.time, state.duration, options);
+  }, [signedIn, movie.id]);
+
+  // Leaving the page or the player stores the final position.
+  useEffect(() => {
+    const onHide = () => flush({ keepalive: true });
+    window.addEventListener('pagehide', onHide);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      flush({ keepalive: true });
+    };
+  }, [flush]);
 
   // The player fills the page, so the page is what goes fullscreen. That is also
   // what a card click fullscreens, so the player's button shows the right state
@@ -31,16 +57,17 @@ export default function VideoPlayer({ movie, autoPlay = false }) {
 
   function onTimeUpdate(event) {
     const { currentTime, duration } = event.target;
-    if (Math.abs(currentTime - savedAt.current) < 5) return;
-    savedAt.current = currentTime;
-    // Within the last minute counts as finished (credits), so start fresh next time.
-    writeResume(movie.id, duration && currentTime < duration - 60 ? currentTime : 0);
+    const state = latest.current;
+    state.time = currentTime;
+    state.duration = Number.isFinite(duration) ? duration : 0;
+    if (Math.abs(currentTime - state.sentAt) >= SAVE_EVERY) flush();
   }
 
   function startOver() {
     const el = shellRef.current?.querySelector('mux-player');
     if (el) el.currentTime = 0;
-    writeResume(movie.id, 0);
+    latest.current.sentAt = 0;
+    viewer.clearProgress(movie.id);
     setShowResume(false);
   }
 
@@ -65,8 +92,12 @@ export default function VideoPlayer({ movie, autoPlay = false }) {
         hotkeys="noarrowleft noarrowright noj nol"
         _hlsConfig={hlsConfig}
         onTimeUpdate={onTimeUpdate}
-        onPlaying={() => showResume && setTimeout(() => setShowResume(false), 6000)}
-        onEnded={() => writeResume(movie.id, 0)}
+        onPlaying={() => {
+          latest.current.played = true;
+          if (showResume) setTimeout(() => setShowResume(false), 6000);
+        }}
+        onPause={() => flush()}
+        onEnded={() => flush()}
       />
       {feedback && (
         <div key={feedback.id} className={`seek-ripple ${feedback.side}`} aria-hidden="true">
